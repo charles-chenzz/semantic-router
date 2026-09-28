@@ -136,6 +136,11 @@ func (r *OpenAIRouter) eligibleLearningModelRefs(refs []config.ModelRef, ctx *Re
 		}
 		eligible = append(eligible, ref)
 	}
+	if handoffEligible, routingErr := r.narrowHandoffModelRefs(eligible, ctx); routingErr == nil {
+		eligible = handoffEligible
+	} else {
+		return nil
+	}
 	return eligible
 }
 

@@ -54,6 +54,7 @@ func (r *OpenAIRouter) handleRequestBodyDispatch(v *ext_proc.ProcessingRequest_R
 	// Decide mode based on config: only use streaming handler when explicitly enabled
 	streamedMode := r.Config != nil && r.Config.StreamedBodyMode
 	if ctx.FullDuplexRequestBody && !streamedMode {
+		ignoreHandoff(ctx, "full_duplex_passthrough")
 		return newFullDuplexRequestBodyResponse(v.RequestBody.GetBody(), eos), nil
 	}
 	// STREAMED may contain just one EOS body message; it still needs the guards.
@@ -242,6 +243,7 @@ func (r *OpenAIRouter) processRequestHeaders(
 	}
 	response = r.encodeImmediateResponseForClient(response, ctx)
 	r.bindBenchmarkConfigResponse(response, ctx)
+	appendHandoffReceiptToImmediateResponse(response, ctx)
 	if err := sendResponse(stream, response, "request header"); err != nil {
 		logging.Errorf("sendResponse for headers failed: %v", err)
 		return err
@@ -265,6 +267,7 @@ func (r *OpenAIRouter) processRequestBody(
 	}
 	response = r.encodeImmediateResponseForClient(response, ctx)
 	r.bindBenchmarkConfigResponse(response, ctx)
+	appendHandoffReceiptToImmediateResponse(response, ctx)
 	r.persistImmediateResponseObject(response, ctx)
 	// FULL_DUPLEX_STREAMED explicitly permits the processor to buffer any
 	// number of input chunks before sending a StreamedBodyResponse. A nil

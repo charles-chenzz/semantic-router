@@ -48,6 +48,7 @@ func (r *OpenAIRouter) handleRequestBody(
 		ctx.RequestModel = originalModel
 	}
 	if r.isLooperRequest(ctx) {
+		ignoreHandoff(ctx, "looper")
 		logging.ComponentDebugEvent("extproc", "looper_internal_request_detected", map[string]interface{}{
 			"request_id": ctx.RequestID,
 			"model":      originalModel,

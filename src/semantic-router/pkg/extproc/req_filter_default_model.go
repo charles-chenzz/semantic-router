@@ -34,16 +34,21 @@ func (r *OpenAIRouter) selectDecisionDefaultRuntimeModel(
 		nil,
 		ctx.VSRContextTokenCount,
 	); err != nil {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "minimum_candidates_unsatisfied")
 		return "", entropy.ReasoningDecision{}, err
 	}
 	selectedModel := r.Config.DefaultModel
 	if r.modelNameExceedsContextWindow(selectedModel, ctx.VSRContextTokenCount) {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "default_model_context_ineligible")
 		return "", entropy.ReasoningDecision{}, fmt.Errorf(
 			"%w: decision %q requires %d request tokens but the configured default model has a smaller context window",
 			errNoContextEligibleDecisionModel,
 			decisionName,
 			ctx.VSRContextTokenCount,
 		)
+	}
+	if err := r.applyHandoffDefaultConstraints(selectedModel, ctx); err != nil {
+		return "", entropy.ReasoningDecision{}, err
 	}
 	ctx.VSRSelectedModel = selectedModel
 	ctx.VSRSelectionMethod = "default"

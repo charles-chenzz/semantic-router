@@ -26,6 +26,7 @@ func (r *OpenAIRouter) performDecisionEvaluation(originalModel string, history s
 	var selectedModel string
 
 	if fallbackModel, stop := r.prepareDecisionEvaluation(originalModel, history, ctx); stop {
+		ignoreHandoff(ctx, "unsupported_routing_path")
 		return "", 0.0, entropy.ReasoningDecision{}, fallbackModel, nil
 	}
 
@@ -35,6 +36,7 @@ func (r *OpenAIRouter) performDecisionEvaluation(originalModel string, history s
 	ctx.VSRContextHasNonText = ctx.VSRContextHasNonText ||
 		signalInput.requestFacts.ContextHasNonText
 	if signalInput.evaluationText == "" && !hasEnvelopeRoutingFacts(history) {
+		ignoreHandoff(ctx, "unsupported_routing_path")
 		return "", 0.0, entropy.ReasoningDecision{}, "", nil
 	}
 
@@ -49,6 +51,9 @@ func (r *OpenAIRouter) performDecisionEvaluation(originalModel string, history s
 		return "", 0, entropy.ReasoningDecision{}, "", err
 	}
 	if result == nil {
+		if err := r.applyHandoffDecisionFallback(defaultModel, ctx); err != nil {
+			return "", 0, entropy.ReasoningDecision{}, "", err
+		}
 		return "", 0.0, entropy.ReasoningDecision{}, defaultModel, nil
 	}
 
@@ -59,6 +64,14 @@ func (r *OpenAIRouter) performDecisionEvaluation(originalModel string, history s
 		ctx,
 	)
 	return decisionName, evaluationConfidence, reasoningDecision, selectedModel, err
+}
+
+func (r *OpenAIRouter) applyHandoffDecisionFallback(defaultModel string, ctx *RequestContext) error {
+	if defaultModel == "" {
+		ignoreHandoff(ctx, "unsupported_routing_path")
+		return nil
+	}
+	return r.applyHandoffDefaultConstraints(defaultModel, ctx)
 }
 
 func (r *OpenAIRouter) prepareDecisionEvaluation(

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"time"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	ext_proc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -108,6 +109,7 @@ type OpenAIRouter struct {
 	generation              *routerGeneration
 	lookupTableCancel       func()
 	routerSessionStateStore *sessiontelemetry.RouterSessionStateStoreSlot
+	handoffNow              func() time.Time
 
 	// WorkflowStateService owns the shared workflow tool-state store so that
 	// pause/resume works across independent HTTP requests without leaking

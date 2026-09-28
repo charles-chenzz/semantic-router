@@ -53,6 +53,9 @@ func (r *OpenAIRouter) runRequestPreRoutingStages(
 	if !ctx.Routing.IsResolved() {
 		r.resolveEntrypointForRequest(originalModel, ctx)
 	}
+	if ctx.Routing.IsPassthrough() {
+		ignoreHandoff(ctx, "concrete_model")
+	}
 	populatePinnedSessionFromHeaders(ctx)
 	history := signalConversationHistoryFromSnapshot(snapshot)
 	applyRequestContextEstimate(snapshot, ctx)
@@ -65,29 +68,7 @@ func (r *OpenAIRouter) runRequestPreRoutingStages(
 		decisionErr = r.benchmarkCallLimitCheck(ctx)
 	}
 	if decisionErr != nil {
-		if errors.Is(decisionErr, errBenchmarkCallLimit) {
-			return requestDecisionState{}, r.createErrorResponse(412, errBenchmarkCallLimit.Error())
-		}
-		if errors.Is(decisionErr, context.Canceled) ||
-			errors.Is(decisionErr, context.DeadlineExceeded) {
-			return requestDecisionState{}, r.createErrorResponse(499, "request canceled")
-		}
-		if errors.Is(decisionErr, errNoContextEligibleDecisionModel) {
-			logging.Warnf("[Request Body] Decision candidates cannot satisfy request context: %v", decisionErr)
-			return requestDecisionState{}, r.createErrorResponse(422, decisionErr.Error())
-		}
-		if errors.Is(decisionErr, selection.ErrNoEligibleCandidates) {
-			logging.Warnf("[Request Body] Selection policy rejected all candidates: %v", decisionErr)
-			return requestDecisionState{}, r.respondSelectionRejected(ctx, originalModel, decisionErr)
-		}
-		if response, handled := r.processBodyRoutingError(decisionErr, ctx); handled {
-			return requestDecisionState{}, response
-		}
-		logging.Errorf("[Request Body] Decision evaluation failed: %v", decisionErr)
-		if errors.Is(decisionErr, decision.ErrDecisionUnresolved) {
-			return requestDecisionState{}, r.respondDecisionUnresolved(ctx, originalModel, decisionErr)
-		}
-		return requestDecisionState{}, r.createErrorResponse(403, decisionErr.Error())
+		return requestDecisionState{}, r.decisionEvaluationErrorResponse(ctx, originalModel, decisionErr)
 	}
 	if resp := r.handleFastResponse(ctx, decisionName); resp != nil {
 		r.startRouterReplay(ctx, originalModel, selectedModel, decisionName)
@@ -123,6 +104,34 @@ func (r *OpenAIRouter) runRequestPreRoutingStages(
 		reasoningDecision: reasoningDecision,
 		selectedModel:     selectedModel,
 	}, nil
+}
+
+func (r *OpenAIRouter) decisionEvaluationErrorResponse(ctx *RequestContext, originalModel string, decisionErr error) *ext_proc.ProcessingResponse {
+	if response := handoffRoutingErrorResponse(decisionErr, r); response != nil {
+		return response
+	}
+	if errors.Is(decisionErr, errBenchmarkCallLimit) {
+		return r.createErrorResponse(412, errBenchmarkCallLimit.Error())
+	}
+	if errors.Is(decisionErr, context.Canceled) || errors.Is(decisionErr, context.DeadlineExceeded) {
+		return r.createErrorResponse(499, "request canceled")
+	}
+	if errors.Is(decisionErr, errNoContextEligibleDecisionModel) {
+		logging.Warnf("[Request Body] Decision candidates cannot satisfy request context: %v", decisionErr)
+		return r.createErrorResponse(422, decisionErr.Error())
+	}
+	if errors.Is(decisionErr, selection.ErrNoEligibleCandidates) {
+		logging.Warnf("[Request Body] Selection policy rejected all candidates: %v", decisionErr)
+		return r.respondSelectionRejected(ctx, originalModel, decisionErr)
+	}
+	if response, handled := r.processBodyRoutingError(decisionErr, ctx); handled {
+		return response
+	}
+	logging.Errorf("[Request Body] Decision evaluation failed: %v", decisionErr)
+	if errors.Is(decisionErr, decision.ErrDecisionUnresolved) {
+		return r.respondDecisionUnresolved(ctx, originalModel, decisionErr)
+	}
+	return r.createErrorResponse(403, decisionErr.Error())
 }
 
 // respondDecisionUnresolved builds the fail_request 503 and finalizes the

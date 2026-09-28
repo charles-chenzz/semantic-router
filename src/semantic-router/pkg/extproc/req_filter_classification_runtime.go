@@ -313,6 +313,9 @@ func (r *OpenAIRouter) finalizeDecisionEvaluation(
 		return decisionName, evaluationConfidence, reasoningDecision, "", err
 	}
 
+	if result.Decision.Action != nil {
+		ignoreHandoff(ctx, "route_action")
+	}
 	destination, terminal, actionErr := r.decisionRouteActionDestination(result.Decision, ctx)
 	if actionErr != nil {
 		return decisionName, evaluationConfidence, reasoningDecision, "", actionErr
@@ -322,6 +325,7 @@ func (r *OpenAIRouter) finalizeDecisionEvaluation(
 	}
 
 	if !r.requestModelActsAsAuto(originalModel) {
+		ignoreHandoff(ctx, "concrete_model")
 		logging.ComponentDebugEvent("extproc", "explicit_model_preserved", map[string]interface{}{
 			"request_id":     ctx.RequestID,
 			"original_model": originalModel,
@@ -384,11 +388,19 @@ func (r *OpenAIRouter) selectDecisionRuntimeModel(
 		span.End()
 	}()
 	if result.Decision.GetFastResponseConfig() != nil {
+		ignoreHandoff(ctx, "fast_response")
 		ctx.VSRSelectedModel = ""
 		ctx.VSRSelectionMethod = "fast_response"
 		return "", entropy.ReasoningDecision{}, nil
 	}
+	if result.Decision.Algorithm != nil && config.IsLooperAlgorithmType(result.Decision.Algorithm.Type) {
+		ignoreHandoff(ctx, "looper")
+	}
+	if err := r.admitHandoffRequest(ctx); err != nil {
+		return "", entropy.ReasoningDecision{}, err
+	}
 	if ineligible := r.contextIneligibleAlgorithmModelCount(result.Decision, ctx.VSRContextTokenCount); !decisionUsesAutomaticOutput(ctx.SemanticRequest, result.Decision) && !selection.CandidateRequirementsEnabled(r.candidateRequirements(ctx)) && ineligible > 0 {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "algorithm_model_context_ineligible")
 		return "", entropy.ReasoningDecision{}, fmt.Errorf(
 			"%w: decision %q requires %d request tokens but %d explicitly configured algorithm model(s) have smaller context windows",
 			errNoContextEligibleDecisionModel,
@@ -403,13 +415,20 @@ func (r *OpenAIRouter) selectDecisionRuntimeModel(
 
 	eligibleModelRefs, err := r.decisionEligibleModelRefs(result.Decision, ctx)
 	if err != nil {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "policy_candidates_unavailable")
 		return "", entropy.ReasoningDecision{}, err
 	}
+	eligibleModelRefs, err = r.handoffEligibleModelRefs(eligibleModelRefs, ctx)
+	if err != nil {
+		return "", entropy.ReasoningDecision{}, err
+	}
+	ctx.VSREligibleModelRefs = cloneModelRefs(eligibleModelRefs)
 	if minimumErr := validateMinimumEligibleDecisionModels(
 		result.Decision,
 		eligibleModelRefs,
 		ctx.VSRContextTokenCount,
 	); minimumErr != nil {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "minimum_candidates_unsatisfied")
 		return "", entropy.ReasoningDecision{}, minimumErr
 	}
 
@@ -436,6 +455,7 @@ func (r *OpenAIRouter) selectDecisionRuntimeModel(
 		ctx,
 	)
 	if err != nil {
+		rejectActiveHandoff(ctx, 422, handoffStatusRejected, "selection_failed")
 		return "", entropy.ReasoningDecision{}, err
 	}
 	if selectedModelRef == nil {
@@ -443,11 +463,15 @@ func (r *OpenAIRouter) selectDecisionRuntimeModel(
 			return "", entropy.ReasoningDecision{}, selection.ErrNoEligibleCandidates
 		}
 		selectedModel := r.Config.DefaultModel
+		if err := r.applyHandoffDefaultConstraints(selectedModel, ctx); err != nil {
+			return "", entropy.ReasoningDecision{}, err
+		}
 		ctx.VSRSelectedModel = selectedModel
 		ctx.VSRSelectionMethod = "default"
 		logging.Warnf("[ModelSelection] No valid decision modelRefs for decision %s, using default model %s", decisionName, selectedModel)
 		return selectedModel, entropy.ReasoningDecision{}, nil
 	}
+	acceptHandoff(ctx)
 	selectedModel := selectedModelRef.Model
 	selectionFields := map[string]interface{}{
 		"request_id":        ctx.RequestID,
