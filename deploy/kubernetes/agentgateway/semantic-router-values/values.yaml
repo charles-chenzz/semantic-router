@@ -325,6 +325,7 @@ config:
           description: General knowledge and miscellaneous topics
     modelCards:
       - name: base-model
+        capabilities: [chat, tools]
         loras:
           - name: science-expert
             description: 'Specialized for science domains: biology, chemistry, physics, health, engineering'

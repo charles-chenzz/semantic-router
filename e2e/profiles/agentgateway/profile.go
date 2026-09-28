@@ -138,6 +138,7 @@ func (p *Profile) GetTestCases() []string {
 		[]string{
 			"agentgateway-traffic-routing",
 			"agentgateway-full-duplex-multiturn",
+			"agentgateway-selection-handoff",
 		},
 	)
 }
