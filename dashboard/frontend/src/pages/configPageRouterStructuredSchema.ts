@@ -194,6 +194,13 @@ export const ROUTER_STRUCTURED_FIELDS: Partial<
   Record<RouterSystemKey, Record<string, RouterStructuredFieldDefinition>>
 > = {
   router_core: {
+    handoff: {
+      label: 'Selection Handoff',
+      description: 'Accept trusted selection-handoff envelopes from an authenticated gateway.',
+      schema: object('Selection Handoff', {
+        enabled: boolean('Enabled'),
+      }),
+    },
     auto_model_names: {
       label: 'Auto Model Aliases',
       description: 'Accepted aliases for automatic model routing.',

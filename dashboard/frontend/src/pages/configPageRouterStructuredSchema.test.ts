@@ -351,3 +351,23 @@ describe('router defaults structured schemas', () => {
     }
   })
 })
+
+describe('selection handoff structured schema', () => {
+  it('normalizes and exposes the trusted selection handoff control', () => {
+    const normalized = normalizeRouterStructuredFields('router_core', {
+      handoff: { enabled: true },
+    })
+    expect(normalized.handoff).toEqual({ enabled: true })
+
+    const cards = buildRouterSectionCards({
+      config: null,
+      routerConfig: { router_core: normalized },
+      routerDefaults: null,
+      toolsData: [],
+      toolsLoading: false,
+      toolsError: null,
+    })
+    const routerCore = cards.find((card) => card.key === 'router_core')
+    expect(routerCore?.editFields.find((field) => field.name === 'handoff')?.type).toBe('custom')
+  })
+})
