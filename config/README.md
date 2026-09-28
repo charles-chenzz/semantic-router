@@ -143,6 +143,12 @@ runtime dependency; they do not define routing behavior by themselves.
   reduce the eligible pool below that contract.
 - Router Learning lives under `global.router.learning`; it is separate from a
   decision's request-time base algorithm.
+- Selection handoff is disabled by default under
+  `global.router.handoff.enabled`. Enable it only behind an authenticated
+  gateway that strips caller-supplied `x-vsr-handoff-envelope` values before
+  injecting or forwarding an authenticated envelope. The Router always removes
+  that carrier from classifier metadata and provider-bound headers. See
+  [Selection Handoff](../website/docs/tutorials/global/api-and-observability.md#selection-handoff).
 - Router replay is disabled by default and can capture request or response
   bodies. Review its access controls and retention settings before enabling it.
 - `global.router.skip_processing.enabled` should be enabled only when an

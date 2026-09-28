@@ -292,6 +292,15 @@ Requests using an automatic model alias enter the default `routing` profile.
 A concrete provider model name is a direct pass-through request and bypasses
 recipe signals, decisions, route plugins, cache, learning, and session routing.
 
+Trusted gateways can opt into the Phase 1 selection-handoff slice with
+`global.router.handoff.enabled: true`. It is disabled by default and currently
+applies only to `POST /v1/chat/completions` requests that use normal semantic
+model selection. The gateway must strip caller-supplied handoff headers and
+inject or forward only an authenticated envelope; the Router does not
+authenticate the header itself. See
+[Selection Handoff](../tutorials/global/api-and-observability#selection-handoff)
+for the envelope, limits, receipts, supported paths, and non-goals.
+
 ## Validate and serve
 
 ```bash

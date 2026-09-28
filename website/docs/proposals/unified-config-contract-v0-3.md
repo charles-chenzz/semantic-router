@@ -122,6 +122,15 @@ Built-in defaults live in the router. `global.router.config_source` selects file
 configuration or Kubernetes CRD reconciliation. External templates must not apply
 hidden defaults after validation.
 
+`global.router.handoff.enabled` gates the trusted selection-handoff transport
+adapter and defaults to `false`. It is a router-wide ingress control rather than
+a signal, decision, algorithm, or plugin setting. Enabling it does not create an
+agent runtime or relax recipe policy: accepted handoff facts may only narrow the
+already-authorized candidate pool. The carrier is removed before signal
+evaluation and provider dispatch. Deployments must place the Router behind an
+authenticated gateway that owns spoofed-header stripping and authenticated
+envelope injection.
+
 Built-in category/domain inference keeps its runtime policy in
 `global.model_catalog.modules.classifier.domain`. The local model uses the
 canonical `variant` field; a remote classifier uses the shared `backend` block

@@ -140,6 +140,27 @@ Coordination with [#2546](https://github.com/vllm-project/semantic-router/issues
 - keep Router Memory receipts content-free in diagnostics;
 - defer deployment-specific transport semantics from the portable schema.
 
+#### Implemented partial selection-handoff slice
+
+The first implementation slice for #3380 intentionally delivers less than this
+proposal's full Phase 3 completion criterion. It accepts a version-1 portable
+JSON envelope through the trusted `x-vsr-handoff-envelope` adapter for normal
+Chat Completions semantic selection only. The implemented fields are
+`version`, `handoff_id`, `root_invocation_id`, optional
+`parent_invocation_id`, `delegated_role`, optional
+`required_capabilities`, `remaining_tokens`, `context_portability`, optional
+`tool_state_refs`, and `expires_at`.
+
+This partial slice validates a 4 KiB decoded/6 KiB encoded boundary, strict
+field and list limits, a 15-minute maximum lifetime, all-of capability
+narrowing, a conservative request-context token floor, existing-lock-preserving
+`portable` behavior, and previous-model `sticky` behavior. It emits
+content-minimized accepted/rejected/expired/ignored receipts and strips the
+carrier from classifier metadata and provider requests. It does not implement
+the idempotency, cancellation, summary, broader protocol, or evaluation work
+required to complete proposal Phase 3. The operational contract is documented
+under [Selection Handoff](../tutorials/global/api-and-observability#selection-handoff).
+
 ## What stays unchanged in v0.3
 
 This proposal **does not** add:

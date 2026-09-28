@@ -294,6 +294,92 @@ or stripping the header on trust grounds. Background on the AI Gateway
 interop pattern that motivates this gate lives in
 [issue #1808](https://github.com/vllm-project/semantic-router/issues/1808).
 
+### Selection Handoff
+
+Phase 1 of [issue #3380](https://github.com/vllm-project/semantic-router/issues/3380)
+adds a narrow, policy-safe handoff slice for normal semantic selection on
+`POST /v1/chat/completions`. It is disabled by default:
+
+```yaml
+global:
+  router:
+    handoff:
+      enabled: false
+```
+
+Only enable it when an authenticated gateway in front of the Router removes
+caller-supplied `x-vsr-handoff-envelope` headers and injects or forwards an
+authenticated value. The Router validates but does not authenticate the
+envelope. It always removes the carrier from its request-local generic header
+map and from the request forwarded to the model, whether the feature is enabled,
+disabled, unsupported, or rejected. This prevents the carrier from becoming a
+metadata-classifier signal or leaking to a provider.
+
+The header value is base64url without padding over a JSON object with exactly
+these fields:
+
+| Field | Required | Phase 1 use |
+| --- | --- | --- |
+| `version` | Yes | Must be the string `"1"`. |
+| `handoff_id` | Yes | Bounded receipt identity. |
+| `root_invocation_id` | Yes | Validated and retained for this request only. |
+| `parent_invocation_id` | No | Validated and retained for this request only. |
+| `delegated_role` | Yes | Validated and retained; does not alter the prompt or semantic decision. |
+| `required_capabilities` | No | All-of exact capability IDs used to narrow eligible model cards. |
+| `remaining_tokens` | Yes | Conservative request-context admission floor. |
+| `context_portability` | Yes | `portable` or `sticky`. |
+| `tool_state_refs` | No | Bounded opaque IDs; never dereferenced, logged raw, or copied to a model request or Replay. |
+| `expires_at` | Yes | UTC RFC 3339 expiry, no more than 15 minutes in the future. |
+
+The decoded JSON is limited to 4 KiB and the encoded header to 6 KiB. Identity
+and tool-reference strings are at most 128 ASCII characters, start with an
+ASCII letter or digit, and otherwise use letters, digits, `.`, `_`, `:`, `/`,
+`@`, or `-`. Role and capability IDs are at most 64 characters; normalized role
+and capability IDs use lowercase letters, digits, `.`, `_`, or `-`. Capability
+and tool-reference lists contain at most 16 unique values. `remaining_tokens`
+is an integer from 0 through 10,000,000. Unknown or duplicate JSON fields,
+trailing JSON, excessive nesting, null declared values, duplicate list items,
+unsupported versions, and invalid characters are rejected.
+
+Handoff facts never rematch the semantic decision and never widen policy. The
+Router first applies its existing authorization, safety, residency, route, and
+context-window eligibility, then applies all-of capability filtering before
+`minimum_candidates` and model selection. Models without capability metadata do
+not satisfy a positive capability requirement. Default-model fallback and
+Router Learning candidate expansion are filtered again so neither can bypass
+the envelope or existing policy.
+
+`remaining_tokens <=` the estimated request-context tokens returns HTTP 422.
+The expiry is checked again immediately before selection. `portable` adds no
+new lock and cannot release existing active-tool-loop, provider-state, or
+session-continuity locks. `sticky` intersects the eligible candidates with the
+known previous model; a missing or ineligible previous model returns HTTP 409.
+
+Every request carrying the header receives an outcome through independent
+response headers:
+
+| Header | Meaning |
+| --- | --- |
+| `x-vsr-handoff-version` | Parsed envelope version, when parsing succeeded. |
+| `x-vsr-handoff-id` | Parsed handoff ID, when parsing succeeded. |
+| `x-vsr-handoff-status` | `accepted`, `rejected`, `expired`, or `ignored`. |
+| `x-vsr-handoff-reason` | Content-free machine reason such as `constraints_applied` or `capability_unsatisfied`. |
+
+Malformed or unknown envelopes return HTTP 400, oversized envelopes return 413,
+expired envelopes and capability/token failures return 422, and sticky conflicts
+return 409. With no envelope, behavior is unchanged and no receipt is emitted.
+Disabled or unsupported requests are stripped, routed normally, and return an
+`ignored` receipt. Responses API, Anthropic, concrete-model pass-through, route
+actions, fast responses, and Looper paths are not supported in this slice and
+must not report `accepted`.
+
+This is **Partial #3380**, not the complete handoff design. Phase 1 does not add
+task/result summaries, time or cost budgets, output reservation, streaming
+decrement, retry reconciliation, cancellation, duplicate/idempotency ledgers,
+raw Replay schema, Responses or Anthropic support, agent discovery/invocation,
+workflow orchestration, durable task state, transcripts, credentials, raw tool
+results, or hidden reasoning.
+
 ### Router Replay
 
 ```yaml
